@@ -14,7 +14,8 @@ from typing import Dict, Any, List
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from fastapi.encoders import jsonable_encoder
+from pydantic import BaseModel, Field
 import uvicorn
 from dotenv import load_dotenv
 
@@ -56,7 +57,7 @@ logger = setup_logging()
 class HealthResponse(BaseModel):
     """Health check response model."""
     status: str
-    timestamp: datetime
+    timestamp: datetime = Field(default_factory=datetime.now)
     version: str
     python_backend: bool
     ollama_available: bool
@@ -65,7 +66,7 @@ class ErrorResponse(BaseModel):
     """Error response model."""
     error: str
     detail: str
-    timestamp: datetime
+    timestamp: datetime = Field(default_factory=datetime.now)
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -108,13 +109,13 @@ async def global_exception_handler(request, exc):
     """Global exception handler for unhandled errors."""
     logger.error(f"Unhandled exception: {exc}", exc_info=True)
     
+    error_response = ErrorResponse(
+        error="Internal Server Error",
+        detail="An unexpected error occurred. Check logs for details."
+    )
     return JSONResponse(
         status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-        content=ErrorResponse(
-            error="Internal Server Error",
-            detail="An unexpected error occurred. Check logs for details.",
-            timestamp=datetime.now()
-        ).dict()
+        content=jsonable_encoder(error_response)
     )
 
 @app.exception_handler(HTTPException)
@@ -122,13 +123,13 @@ async def http_exception_handler(request, exc):
     """HTTP exception handler for API errors."""
     logger.warning(f"HTTP exception: {exc.status_code} - {exc.detail}")
     
+    error_response = ErrorResponse(
+        error=f"HTTP {exc.status_code}",
+        detail=exc.detail
+    )
     return JSONResponse(
         status_code=exc.status_code,
-        content=ErrorResponse(
-            error=f"HTTP {exc.status_code}",
-            detail=exc.detail,
-            timestamp=datetime.now()
-        ).dict()
+        content=jsonable_encoder(error_response)
     )
 
 # API Routes
@@ -192,6 +193,9 @@ async def get_ollama_models():
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Could not connect to Ollama service"
         )
+    except HTTPException:
+        # Re-raise HTTPExceptions to preserve status codes
+        raise
     except Exception as e:
         logger.error(f"Error fetching Ollama models: {e}")
         raise HTTPException(
