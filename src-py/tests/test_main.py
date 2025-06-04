@@ -112,18 +112,66 @@ class TestModelsEndpoint:
         assert response.status_code == status.HTTP_503_SERVICE_UNAVAILABLE
 
 
-class TestPlaceholderEndpoints:
-    """Tests for placeholder endpoints that will be implemented in Phase 1."""
+class TestScanEndpoint:
+    """Tests for the project scanning endpoint."""
     
-    def test_scan_endpoint_not_implemented(self, client):
-        """Test scan endpoint returns not implemented."""
+    def test_scan_endpoint_requires_request_body(self, client):
+        """Test scan endpoint requires valid request body."""
         response = client.post("/scan")
         
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         data = response.json()
         
-        assert "error" in data
-        assert "Phase 1" in data["detail"]
+        assert "detail" in data
+    
+    def test_scan_endpoint_invalid_path(self, client):
+        """Test scan endpoint with invalid path."""
+        scan_request = {
+            "path": "/nonexistent/path",
+            "use_ai": False
+        }
+        
+        response = client.post("/scan", json=scan_request)
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        data = response.json()
+        
+        assert "Invalid project path" in data["detail"]
+    
+    def test_scan_endpoint_with_current_project(self, client):
+        """Test scan endpoint with current project directory."""
+        import os
+        current_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        
+        scan_request = {
+            "path": current_dir,
+            "use_ai": False,  # Don't use AI to avoid Ollama dependency
+            "max_files": 100
+        }
+        
+        response = client.post("/scan", json=scan_request)
+        
+        # Should succeed with current project
+        assert response.status_code == status.HTTP_200_OK
+        data = response.json()
+        
+        # Verify response structure
+        required_fields = [
+            "scan_id", "path", "total_files", "total_directories",
+            "file_extensions", "key_files", "heuristic_classification",
+            "final_classification", "scan_duration_ms"
+        ]
+        
+        for field in required_fields:
+            assert field in data
+        
+        # Verify this is recognized as a Python project
+        assert data["heuristic_classification"]["category"] == "SystemUtilities/Python"
+        assert "requirements.txt" in data["key_files"]
+
+
+class TestPlaceholderEndpoints:
+    """Tests for placeholder endpoints that still need implementation."""
     
     def test_organize_preview_not_implemented(self, client):
         """Test organize preview endpoint returns not implemented."""

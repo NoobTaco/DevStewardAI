@@ -9,7 +9,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from datetime import datetime
-from typing import Dict, Any, List
+from typing import Dict, Any, List, Optional
 
 from fastapi import FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -18,6 +18,8 @@ from fastapi.encoders import jsonable_encoder
 from pydantic import BaseModel, Field
 import uvicorn
 from dotenv import load_dotenv
+from core.project_analyzer import ProjectAnalyzer
+from core.utils import validate_project_path
 
 # Load environment variables
 load_dotenv()
@@ -53,6 +55,11 @@ def setup_logging():
 # Initialize logging
 logger = setup_logging()
 
+# Initialize project analyzer
+project_analyzer = ProjectAnalyzer(
+    ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+)
+
 # Pydantic models for API requests/responses
 class HealthResponse(BaseModel):
     """Health check response model."""
@@ -66,6 +73,27 @@ class ErrorResponse(BaseModel):
     """Error response model."""
     error: str
     detail: str
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+class ScanRequest(BaseModel):
+    """Request model for directory scanning."""
+    path: str
+    use_ai: bool = True
+    ai_model: Optional[str] = "llama2"
+    max_files: int = 10000
+
+class ScanResponse(BaseModel):
+    """Response model for directory scanning."""
+    scan_id: str
+    path: str
+    total_files: int
+    total_directories: int
+    file_extensions: Dict[str, int]
+    key_files: List[str]
+    heuristic_classification: Dict[str, Any]
+    ai_classification: Optional[Dict[str, Any]]
+    final_classification: Dict[str, Any]
+    scan_duration_ms: int
     timestamp: datetime = Field(default_factory=datetime.now)
 
 @asynccontextmanager
@@ -203,18 +231,82 @@ async def get_ollama_models():
             detail="Failed to fetch available models"
         )
 
-@app.post("/scan")
-async def scan_directory():
+@app.post("/scan", response_model=ScanResponse)
+async def scan_directory(request: ScanRequest):
     """
-    Scan directory and analyze projects.
+    Scan directory and analyze project structure and type.
     
-    Placeholder endpoint for Phase 1 implementation.
+    This endpoint performs a comprehensive analysis of a project directory:
+    - Recursively scans files and directories
+    - Analyzes file types and extensions
+    - Detects key project files (package.json, Cargo.toml, etc.)
+    - Applies heuristic classification rules
+    - Optionally uses Ollama AI for enhanced classification
+    
+    Args:
+        request: ScanRequest with path and options
+        
+    Returns:
+        ScanResponse with detailed analysis results
     """
-    logger.info("Directory scan requested")
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Directory scanning will be implemented in Phase 1"
-    )
+    logger.info(f"Directory scan requested for: {request.path}")
+    
+    try:
+        # Validate the project path
+        is_valid, error_message = validate_project_path(request.path)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid project path: {error_message}"
+            )
+        
+        # Perform complete project analysis
+        analysis = await project_analyzer.analyze_project(
+            project_path=request.path,
+            use_ai=request.use_ai,
+            ai_model=request.ai_model or "llama2"
+        )
+        
+        # Convert classification results to dictionaries
+        def classification_to_dict(classification):
+            if classification:
+                return {
+                    "category": classification.category,
+                    "confidence": classification.confidence,
+                    "reasoning": classification.reasoning,
+                    "method": classification.method,
+                    "suggested_name": classification.suggested_name
+                }
+            return None
+        
+        # Prepare response
+        response = ScanResponse(
+            scan_id=analysis.scan_result.scan_id,
+            path=analysis.scan_result.path,
+            total_files=analysis.scan_result.total_files,
+            total_directories=analysis.scan_result.total_directories,
+            file_extensions=analysis.scan_result.file_extensions,
+            key_files=analysis.scan_result.key_files,
+            heuristic_classification=classification_to_dict(analysis.heuristic_classification),
+            ai_classification=classification_to_dict(analysis.ai_classification),
+            final_classification=classification_to_dict(analysis.final_classification),
+            scan_duration_ms=analysis.scan_result.scan_duration_ms
+        )
+        
+        logger.info(f"Scan complete: {analysis.final_classification.category} "
+                   f"({analysis.final_classification.confidence:.2f} confidence)")
+        
+        return response
+        
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
+    except Exception as e:
+        logger.error(f"Scan failed for {request.path}: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to scan directory: {str(e)}"
+        )
 
 @app.post("/organize/preview")
 async def preview_organization():
