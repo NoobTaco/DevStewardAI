@@ -1,0 +1,103 @@
+{
+  "build": {
+    "beforeDevCommand": "",
+    "beforeBuildCommand": "npm run build:ui",
+    "devPath": "http://localhost:3000",
+    "distDir": "../src-ui/dist",
+    "withGlobalTauri": false
+  },
+  "package": {
+    "productName": "DevSteward AI",
+    "version": "1.0.0"
+  },
+  "tauri": {
+    "allowlist": {
+      "all": false,
+      "shell": {
+        "all": false,
+        "open": true
+      },
+      "http": {
+        "all": true,
+        "request": true,
+        "scope": ["http://localhost:8008/**", "http://127.0.0.1:8008/**", "http://localhost:11434/**"]
+      },
+      "fs": {
+        "all": false,
+        "readFile": true,
+        "writeFile": true,
+        "readDir": true,
+        "copyFile": true,
+        "createDir": true,
+        "removeDir": true,
+        "removeFile": true,
+        "renameFile": true,
+        "exists": true,
+        "scope": ["$HOME/**", "$DESKTOP/**", "$DOCUMENT/**", "$DOWNLOAD/**"]
+      },
+      "path": {
+        "all": true
+      },
+      "dialog": {
+        "all": false,
+        "open": true,
+        "save": true,
+        "message": true,
+        "ask": true,
+        "confirm": true
+      },
+      "notification": {
+        "all": true
+      },
+      "process": {
+        "all": false,
+        "relaunch": true,
+        "exit": true
+      }
+    },
+    "bundle": {
+      "active": true,
+      "targets": "all",
+      "identifier": "com.devsteward.ai",
+      "icon": [
+        "icons/32x32.png",
+        "icons/128x128.png",
+        "icons/128x128@2x.png",
+        "icons/icon.icns",
+        "icons/icon.ico"
+      ],
+      "category": "DeveloperTool",
+      "copyright": "Copyright © 2024 DevSteward AI Team",
+      "deb": {
+        "depends": []
+      },
+      "macOS": {
+        "frameworks": [],
+        "minimumSystemVersion": "",
+        "exceptionDomain": ""
+      },
+      "windows": {
+        "certificateThumbprint": null,
+        "digestAlgorithm": "sha256",
+        "timestampUrl": ""
+      }
+    },
+    "security": {
+      "csp": null
+    },
+    "updater": {
+      "active": false
+    },
+    "windows": [
+      {
+        "fullscreen": false,
+        "resizable": true,
+        "title": "DevSteward AI",
+        "width": 1200,
+        "height": 800,
+        "minWidth": 800,
+        "minHeight": 600
+      }
+    ]
+  }
+}
