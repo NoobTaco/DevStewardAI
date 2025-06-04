@@ -1,0 +1,62 @@
+{
+  "name": "devsteward-ai",
+  "version": "1.0.0",
+  "description": "AI-powered project organizer and bootstrapper for developers",
+  "author": "DevSteward AI Team",
+  "license": "MIT",
+  "keywords": [
+    "ai",
+    "project-organizer",
+    "ollama",
+    "fastapi",
+    "tauri",
+    "vue",
+    "developer-tools"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/your-username/devsteward-ai.git"
+  },
+  "engines": {
+    "node": ">=18.0.0",
+    "npm": ">=8.0.0"
+  },
+  "scripts": {
+    "dev:ui": "cd src-ui && npm run dev",
+    "dev:py": "cd src-py && uvicorn main:app --reload --port 8008",
+    "dev:tauri": "cd src-tauri && cargo tauri dev",
+    "test:py": "cd src-py && pytest",
+    "test:ui": "cd src-ui && npm run test",
+    "test:rust": "cd src-tauri && cargo test",
+    "test:all": "npm run test:py && npm run test:ui && npm run test:rust",
+    "lint:py": "cd src-py && black . && flake8 . && isort .",
+    "lint:rust": "cd src-tauri && cargo fmt && cargo clippy",
+    "lint:ui": "cd src-ui && npm run lint",
+    "lint:all": "npm run lint:py && npm run lint:rust && npm run lint:ui",
+    "build:ui": "cd src-ui && npm run build",
+    "build:tauri": "cd src-tauri && cargo tauri build",
+    "build:all": "npm run build:ui && npm run build:tauri",
+    "setup": "npm run setup:py && npm run setup:ui && npm run setup:tauri",
+    "setup:py": "cd src-py && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt && pip install -r requirements-dev.txt",
+    "setup:ui": "cd src-ui && npm install",
+    "setup:tauri": "cd src-tauri && cargo build",
+    "clean": "npm run clean:py && npm run clean:ui && npm run clean:rust",
+    "clean:py": "cd src-py && rm -rf __pycache__ .pytest_cache .coverage htmlcov *.log",
+    "clean:ui": "cd src-ui && rm -rf node_modules dist .vite",
+    "clean:rust": "cd src-tauri && cargo clean",
+    "docs:serve": "cd docs && python -m http.server 8080",
+    "health:check": "curl -f http://localhost:8008/health || echo 'Backend not running'",
+    "health:ollama": "curl -f http://localhost:11434/api/tags || echo 'Ollama not running'"
+  },
+  "devDependencies": {
+    "concurrently": "^8.2.0",
+    "cross-env": "^7.0.3"
+  },
+  "optionalDependencies": {
+    "nodemon": "^3.0.0"
+  },
+  "private": true,
+  "workspaces": [
+    "src-ui"
+  ]
+}
