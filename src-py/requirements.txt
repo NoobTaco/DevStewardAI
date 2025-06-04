@@ -13,8 +13,4 @@ python-dotenv>=1.0.0
 # JSON handling and validation
 pydantic>=2.5.0
 
-# CORS middleware for Tauri frontend
-fastapi-cors>=0.1.0
-
-# File system operations and utilities
-pathlib2>=2.3.7
+# Note: CORS middleware is built into FastAPI
