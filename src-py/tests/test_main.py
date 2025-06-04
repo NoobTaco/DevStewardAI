@@ -170,28 +170,59 @@ class TestScanEndpoint:
         assert "requirements.txt" in data["key_files"]
 
 
-class TestPlaceholderEndpoints:
-    """Tests for placeholder endpoints that still need implementation."""
+class TestOrganizationEndpoints:
+    """Tests for organization preview and execution endpoints."""
     
-    def test_organize_preview_not_implemented(self, client):
-        """Test organize preview endpoint returns not implemented."""
+    def test_organize_preview_requires_request_body(self, client):
+        """Test organize preview endpoint requires request body."""
         response = client.post("/organize/preview")
         
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         data = response.json()
         
-        assert "error" in data
-        assert "Phase 1" in data["detail"]
+        assert "detail" in data
     
-    def test_organize_execute_not_implemented(self, client):
-        """Test organize execute endpoint returns not implemented."""
+    def test_organize_preview_invalid_scan_id(self, client):
+        """Test organize preview with invalid scan ID."""
+        preview_request = {
+            "scan_id": "nonexistent_scan_id",
+            "conflict_resolution": "rename",
+            "create_backup": True
+        }
+        
+        response = client.post("/organize/preview", json=preview_request)
+        
+        assert response.status_code == status.HTTP_404_NOT_FOUND
+        data = response.json()
+        
+        assert "Scan results not found" in data["detail"]
+    
+    def test_organize_execute_requires_request_body(self, client):
+        """Test organize execute endpoint requires request body."""
         response = client.post("/organize/execute")
         
-        assert response.status_code == status.HTTP_501_NOT_IMPLEMENTED
+        assert response.status_code == status.HTTP_422_UNPROCESSABLE_ENTITY
         data = response.json()
         
-        assert "error" in data
-        assert "Phase 1" in data["detail"]
+        assert "detail" in data
+    
+    def test_organize_execute_requires_confirmation(self, client):
+        """Test organize execute requires explicit confirmation."""
+        execute_request = {
+            "plan_id": "test_plan_id",
+            "confirm_execution": False
+        }
+        
+        response = client.post("/organize/execute", json=execute_request)
+        
+        assert response.status_code == status.HTTP_400_BAD_REQUEST
+        data = response.json()
+        
+        assert "requires explicit confirmation" in data["detail"]
+
+
+class TestPlaceholderEndpoints:
+    """Tests for placeholder endpoints that still need implementation."""
     
     def test_create_project_not_implemented(self, client):
         """Test create project endpoint returns not implemented."""

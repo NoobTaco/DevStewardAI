@@ -19,7 +19,8 @@ from pydantic import BaseModel, Field
 import uvicorn
 from dotenv import load_dotenv
 from core.project_analyzer import ProjectAnalyzer
-from core.utils import validate_project_path
+from core.organizer import ProjectOrganizer, ConflictResolution
+from core.utils import validate_project_path, load_config
 
 # Load environment variables
 load_dotenv()
@@ -55,10 +56,22 @@ def setup_logging():
 # Initialize logging
 logger = setup_logging()
 
-# Initialize project analyzer
+# Initialize project analyzer and organizer
 project_analyzer = ProjectAnalyzer(
     ollama_base_url=os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 )
+
+# Initialize project organizer
+config = load_config()
+default_org_root = config.get("default_organization_root") or os.path.expanduser("~/OrganizedProjects")
+project_organizer = ProjectOrganizer(
+    root_directory=default_org_root
+)
+
+# In-memory storage for scan results and organization plans
+# In production, this would use Redis or a database
+scan_results_cache: Dict[str, Any] = {}
+organization_plans_cache: Dict[str, Any] = {}
 
 # Pydantic models for API requests/responses
 class HealthResponse(BaseModel):
@@ -94,6 +107,44 @@ class ScanResponse(BaseModel):
     ai_classification: Optional[Dict[str, Any]]
     final_classification: Dict[str, Any]
     scan_duration_ms: int
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+class OrganizePreviewRequest(BaseModel):
+    """Request model for organization preview."""
+    scan_id: str
+    target_category: Optional[str] = None
+    conflict_resolution: str = "rename"  # "skip", "rename", "overwrite"
+    create_backup: bool = True
+    custom_name: Optional[str] = None
+
+class OrganizePreviewResponse(BaseModel):
+    """Response model for organization preview."""
+    plan_id: str
+    scan_id: str
+    source_path: str
+    target_path: str
+    operations: List[Dict[str, Any]]
+    total_operations: int
+    estimated_time_seconds: float
+    total_files: int
+    total_size_bytes: int
+    conflicts_found: int
+    safety_warnings: List[str]
+    timestamp: datetime = Field(default_factory=datetime.now)
+
+class OrganizeExecuteRequest(BaseModel):
+    """Request model for organization execution."""
+    plan_id: str
+    confirm_execution: bool = False
+
+class OrganizeExecuteResponse(BaseModel):
+    """Response model for organization execution."""
+    operation_id: str
+    plan_id: str
+    status: str  # "started", "completed", "failed"
+    message: str
+    progress_url: Optional[str] = None
+    rollback_manifest: Optional[str] = None
     timestamp: datetime = Field(default_factory=datetime.now)
 
 @asynccontextmanager
@@ -293,6 +344,9 @@ async def scan_directory(request: ScanRequest):
             scan_duration_ms=analysis.scan_result.scan_duration_ms
         )
         
+        # Store analysis in cache for later organization
+        scan_results_cache[response.scan_id] = analysis
+        
         logger.info(f"Scan complete: {analysis.final_classification.category} "
                    f"({analysis.final_classification.confidence:.2f} confidence)")
         
@@ -308,31 +362,213 @@ async def scan_directory(request: ScanRequest):
             detail=f"Failed to scan directory: {str(e)}"
         )
 
-@app.post("/organize/preview")
-async def preview_organization():
+@app.post("/organize/preview", response_model=OrganizePreviewResponse)
+async def preview_organization(request: OrganizePreviewRequest):
     """
-    Generate organization plan (dry-run).
+    Generate organization plan (dry-run preview).
     
-    Placeholder endpoint for Phase 1 implementation.
+    Creates a detailed plan showing exactly what will happen during organization:
+    - Target directory structure
+    - Files and directories to be moved
+    - Potential naming conflicts
+    - Estimated operation time
+    - Safety warnings
+    
+    Args:
+        request: OrganizePreviewRequest with scan ID and options
+        
+    Returns:
+        OrganizePreviewResponse with complete organization plan
     """
-    logger.info("Organization preview requested")
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Organization preview will be implemented in Phase 1"
-    )
+    logger.info(f"Organization preview requested for scan: {request.scan_id}")
+    
+    try:
+        # Get scan results from cache
+        if request.scan_id not in scan_results_cache:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Scan results not found for ID: {request.scan_id}"
+            )
+        
+        analysis = scan_results_cache[request.scan_id]
+        
+        # Map string conflict resolution to enum
+        conflict_resolution_map = {
+            "skip": ConflictResolution.SKIP,
+            "rename": ConflictResolution.RENAME,
+            "overwrite": ConflictResolution.OVERWRITE
+        }
+        
+        conflict_resolution = conflict_resolution_map.get(
+            request.conflict_resolution, 
+            ConflictResolution.RENAME
+        )
+        
+        # Generate organization plan
+        plan = project_organizer.generate_organization_plan(
+            project_analysis=analysis,
+            target_category=request.target_category,
+            conflict_resolution=conflict_resolution,
+            create_backup=request.create_backup
+        )
+        
+        # Validate the plan
+        is_valid, issues = project_organizer.validate_organization_plan(plan)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid organization plan: {'; '.join(issues)}"
+            )
+        
+        # Store plan in cache for execution
+        organization_plans_cache[plan.plan_id] = plan
+        
+        # Convert operations to dictionaries
+        operations_dict = []
+        for op in plan.operations:
+            operations_dict.append({
+                "operation_id": op.operation_id,
+                "operation_type": op.operation_type.value,
+                "source_path": op.source_path,
+                "target_path": op.target_path,
+                "estimated_time_seconds": op.estimated_time_seconds,
+                "file_count": op.file_count,
+                "total_size_bytes": op.total_size_bytes,
+                "conflicts": op.conflicts,
+                "resolution": op.resolution.value
+            })
+        
+        # Get target path from main operation
+        main_operation = next((op for op in plan.operations 
+                              if op.operation_type.value == "move_directory"), 
+                             plan.operations[0])
+        
+        response = OrganizePreviewResponse(
+            plan_id=plan.plan_id,
+            scan_id=request.scan_id,
+            source_path=main_operation.source_path,
+            target_path=main_operation.target_path,
+            operations=operations_dict,
+            total_operations=plan.total_operations,
+            estimated_time_seconds=plan.estimated_total_time_seconds,
+            total_files=plan.total_files,
+            total_size_bytes=plan.total_size_bytes,
+            conflicts_found=plan.conflicts_found,
+            safety_warnings=plan.safety_warnings
+        )
+        
+        logger.info(f"Organization plan generated: {plan.total_operations} operations, "
+                   f"~{plan.estimated_total_time_seconds:.1f}s estimated")
+        
+        return response
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Failed to generate organization preview: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to generate organization plan: {str(e)}"
+        )
 
-@app.post("/organize/execute")
-async def execute_organization():
+@app.post("/organize/execute", response_model=OrganizeExecuteResponse)
+async def execute_organization(request: OrganizeExecuteRequest):
     """
-    Execute organization plan.
+    Execute organization plan with real-time progress tracking.
     
-    Placeholder endpoint for Phase 1 implementation.
+    Performs the actual file organization based on a previously generated plan:
+    - Moves files and directories to organized structure
+    - Creates backups if requested
+    - Provides rollback capability if operations fail
+    - Tracks progress in real-time
+    
+    Args:
+        request: OrganizeExecuteRequest with plan ID and confirmation
+        
+    Returns:
+        OrganizeExecuteResponse with execution status and details
     """
-    logger.info("Organization execution requested")
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="Organization execution will be implemented in Phase 1"
-    )
+    logger.info(f"Organization execution requested for plan: {request.plan_id}")
+    
+    try:
+        # Require explicit confirmation for safety
+        if not request.confirm_execution:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Execution requires explicit confirmation (confirm_execution: true)"
+            )
+        
+        # Get organization plan from cache
+        if request.plan_id not in organization_plans_cache:
+            raise HTTPException(
+                status_code=status.HTTP_404_NOT_FOUND,
+                detail=f"Organization plan not found for ID: {request.plan_id}"
+            )
+        
+        plan = organization_plans_cache[request.plan_id]
+        
+        # Validate plan before execution
+        is_valid, issues = project_organizer.validate_organization_plan(plan)
+        if not is_valid:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Plan validation failed: {'; '.join(issues)}"
+            )
+        
+        # Start async execution (in a real app, this would be a background task)
+        operation_id = f"exec_{int(datetime.now().timestamp())}"
+        
+        # For demonstration, we'll execute synchronously but yield progress
+        # In production, this would be a background task with WebSocket/SSE progress
+        progress_generator = project_organizer.execute_organization_plan(plan)
+        
+        final_progress = None
+        async for progress in progress_generator:
+            final_progress = progress
+            # In production, you'd send this progress via WebSocket/SSE
+            logger.info(f"Progress: {progress.files_processed}/{progress.total_files} files, "
+                       f"Status: {progress.status}")
+        
+        if final_progress and final_progress.status == "completed":
+            response = OrganizeExecuteResponse(
+                operation_id=operation_id,
+                plan_id=request.plan_id,
+                status="completed",
+                message=f"Organization completed successfully. "
+                       f"Moved {final_progress.files_processed} files in "
+                       f"{final_progress.elapsed_time_seconds:.2f} seconds.",
+                rollback_manifest=f"operation_manifest_{operation_id}.json"
+            )
+            
+            logger.info(f"Organization execution completed successfully")
+            return response
+        
+        elif final_progress and final_progress.status == "failed":
+            response = OrganizeExecuteResponse(
+                operation_id=operation_id,
+                plan_id=request.plan_id,
+                status="failed",
+                message=f"Organization failed: {final_progress.error_message}",
+                rollback_manifest=f"operation_manifest_{operation_id}.json"
+            )
+            
+            logger.error(f"Organization execution failed: {final_progress.error_message}")
+            return response
+        
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Execution completed with unknown status"
+            )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Organization execution failed: {e}", exc_info=True)
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"Failed to execute organization: {str(e)}"
+        )
 
 @app.post("/projects/create")
 async def create_project():
