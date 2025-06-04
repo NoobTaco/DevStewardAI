@@ -1,0 +1,141 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Catppuccin Mocha Base Styles */
+@layer base {
+  :root {
+    --background: #1e1e2e;
+    --foreground: #cdd6f4;
+    --card: #313244;
+    --card-foreground: #cdd6f4;
+    --primary: #89b4fa;
+    --primary-foreground: #1e1e2e;
+    --secondary: #45475a;
+    --secondary-foreground: #cdd6f4;
+    --muted: #45475a;
+    --muted-foreground: #a6adc8;
+    --accent: #b4befe;
+    --accent-foreground: #1e1e2e;
+    --destructive: #f38ba8;
+    --destructive-foreground: #1e1e2e;
+    --border: #585b70;
+    --input: #313244;
+    --ring: #89b4fa;
+    --radius: 0.5rem;
+  }
+  
+  * {
+    @apply border-border;
+  }
+  
+  body {
+    @apply bg-base text-text;
+    font-feature-settings: "rlig" 1, "calt" 1;
+  }
+  
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    @apply w-2;
+  }
+  
+  ::-webkit-scrollbar-track {
+    @apply bg-surface0;
+  }
+  
+  ::-webkit-scrollbar-thumb {
+    @apply bg-surface2 rounded-full;
+  }
+  
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-overlay0;
+  }
+}
+
+@layer components {
+  /* Button variants */
+  .btn {
+    @apply inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:opacity-50 disabled:pointer-events-none ring-offset-background;
+  }
+  
+  .btn-primary {
+    @apply btn bg-blue text-base hover:bg-blue/90;
+  }
+  
+  .btn-secondary {
+    @apply btn bg-surface1 text-text hover:bg-surface2;
+  }
+  
+  .btn-ghost {
+    @apply btn hover:bg-surface0 hover:text-text;
+  }
+  
+  .btn-destructive {
+    @apply btn bg-red text-base hover:bg-red/90;
+  }
+  
+  /* Card components */
+  .card {
+    @apply rounded-lg border bg-surface0 text-text shadow-sm;
+  }
+  
+  .card-header {
+    @apply flex flex-col space-y-1.5 p-6;
+  }
+  
+  .card-title {
+    @apply text-2xl font-semibold leading-none tracking-tight;
+  }
+  
+  .card-description {
+    @apply text-sm text-subtext1;
+  }
+  
+  .card-content {
+    @apply p-6 pt-0;
+  }
+  
+  .card-footer {
+    @apply flex items-center p-6 pt-0;
+  }
+  
+  /* Input components */
+  .input {
+    @apply flex h-10 w-full rounded-md border border-surface2 bg-surface0 px-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-subtext0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50;
+  }
+  
+  /* Loading spinner */
+  .spinner {
+    @apply inline-block h-4 w-4 animate-spin rounded-full border-2 border-solid border-current border-r-transparent align-[-0.125em] motion-reduce:animate-[spin_1.5s_linear_infinite];
+  }
+  
+  /* File tree styles */
+  .file-tree-node {
+    @apply flex items-center gap-2 py-1 px-2 rounded hover:bg-surface1 transition-colors;
+  }
+  
+  .file-tree-icon {
+    @apply w-4 h-4 text-subtext1;
+  }
+  
+  .file-tree-text {
+    @apply text-sm truncate;
+  }
+  
+  /* Status indicators */
+  .status-success {
+    @apply bg-green text-base;
+  }
+  
+  .status-warning {
+    @apply bg-yellow text-base;
+  }
+  
+  .status-error {
+    @apply bg-red text-base;
+  }
+  
+  .status-info {
+    @apply bg-blue text-base;
+  }
+}
